@@ -1,0 +1,321 @@
+---
+title: "The Academic Impacts of Late Registration"
+author: "Jason Whittle"
+date: "10/4/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+knitr::opts_chunk$set(warning = F)
+knitr::opts_chunk$set(message = F)
+knitr::opts_chunk$set(include = F)
+```
+
+```{r}
+library(tidyverse); theme_set(theme_minimal())
+library(lme4)
+library(plotly)
+```
+
+
+```{r, cache = T}
+data <- read.csv("late_reg_irr_560_20180927.csv") %>% filter(PASSED_IND != "U")
+```
+
+```{r}
+data$course <- paste(data$COURSE_SUBJECT, data$COURSE_NUMBER, sep = "-")
+data$days_late <- ifelse(is.na(data$DAY_IN_REGISTRATION_PERIOD) == T, "On Time", data$DAY_IN_REGISTRATION_PERIOD)
+```
+
+```{r, cache=T}
+data$TERM_CODE <- as.character(data$TERM_CODE)
+data$PASSED_IND <- as.character(data$PASSED_IND)
+data$PASSED_IND <- ifelse(data$PASSED_IND == "Y", 1, 0)
+# data$days_late %>% fct_relevel()
+
+#pass_data <- data %>% filter(FINAL_GRADE != "NG" & FINAL_GRADE != "AU" & FINAL_GRADE != "I") %>% 
+#  select(-BANNER_ID, -CRN, -COURSE_SUBJECT, -COURSE_NUMBER, -TERM_START_DATE, -ADD_DEADLINE, -DROP_DEADLINE, -ADD_DATE, -FINAL_GRADE, -DAY_IN_REGISTRATION_PERIOD, -REGISTRATION_PERIOD)
+
+#pass_model <- glmer(PASSED_IND ~ REGISTRATION_STATUS_CODE + TERM_CODE + (1|course) + (1|days_late), data = pass_data, family = binomial)
+
+#summary(pass_model)
+
+pass_data_2 <- data %>% filter(FINAL_GRADE != "NG" & FINAL_GRADE != "AU" & FINAL_GRADE != "I") %>% 
+  select(-BANNER_ID, -CRN, -COURSE_NUMBER, -TERM_START_DATE, -ADD_DEADLINE, -DROP_DEADLINE, -ADD_DATE, -FINAL_GRADE, -DAY_IN_REGISTRATION_PERIOD, -REGISTRATION_PERIOD)
+
+pass_model_2 <- glmer(PASSED_IND ~ REGISTRATION_STATUS_CODE + TERM_CODE + (1|COURSE_SUBJECT) + (1|days_late), data = pass_data_2, family = binomial)
+
+```
+
+```{r, eval = F}
+rr1 <- ranef(pass_model, condVar = T)
+
+rr2 <- data.frame(late = rownames(rr1[[2]]),
+                  int=unname(rr1[[2]]),
+                  se=sqrt(c(attr(rr1[[2]], "postVar"))))
+#rr3 <- merge(rr2,dd)
+rr4 <- transform(rr2, late = reorder(late, int))
+rr4$late <- factor(rr4$late, levels = c("13", "12", "11", "10", "9", "8", "7", "6", "5", "4", "3", "2", "1", "On Time"))
+days_plot <- rr4 %>% 
+  ggplot(aes(late, int, ymin=int-1.96*se, ymax=int+1.96*se)) + 
+  geom_pointrange() + 
+  labs(x = "Days Late") +
+  coord_flip()
+
+days_plot
+```
+
+
+```{r, eval = FALSE}
+rr1 <- ranef(pass_model, condVar = T)
+
+rr2 <- data.frame(program = rownames(rr1[[1]]),
+                  int=unname(rr1[[1]]),
+                  se=sqrt(c(attr(rr1[[1]], "postVar"))))
+#rr3 <- merge(rr2,dd)
+rr4 <- transform(rr2, program = reorder(program, int))
+program_plot <- rr4 %>% 
+  ggplot(aes(program, int, ymin=int-1.96*se, ymax=int+1.96*se)) + 
+  geom_pointrange() + 
+  labs(x = "Program") +
+  coord_flip()
+
+program_plot
+```
+
+
+```{r}
+data$days_late <- factor(data$days_late,levels = c("On Time", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"))
+                           
+
+data %>% filter(FINAL_GRADE != "AU" & FINAL_GRADE != "NG") %>%
+  group_by(days_late, FINAL_GRADE) %>%
+  summarise(n = n_distinct(BANNER_ID)) %>%
+  mutate(tot = round(n/sum(n), 4)*100) %>%
+  ggplot() + 
+  geom_bar(aes(x = days_late, y = tot , fill=  FINAL_GRADE), position = "fill", stat = "identity")
+```
+# Results
+
+The impacts of late registration on student academic success.
+
+
+- When late registration is examined by academic program (Math, Engl ect.) it appears *late registration negatively impacts* academic performance.
+- When looking at all academic departments together late registration does not *appear* to have a negative impact on academic performance but this is likely caused by late registering student taking easier courses.
+- Registering later than 7 days after the semester begins is statistically significantly correlated with lower academic performance. 
+- Few students seem to enroll for courses 11 or more days following the start of the semester.
+
+## Data
+
+The data included in this analysis consists of Fall and Spring enrollments starting in Fall 2015 and continuing through Spring 2018 for all 16 week term courses. The data specifically focuses on enrollments prior to or on the first day of the term ("On Time") and late enrollments by day through the end of the add period (13 days after the first day of class). After cleaning, the data have 392,606 course enrollments. The statistical modeling used in this analysis is *not causal*, meaning the results of this model show correlations, and not necessarily causation. Despite this limitation late registration (after the 7th day in particular) is shown with both raw numbers and a mixed-effects model to be correlated with lower academic performance by students. 
+
+
+The following analysis focuses on Pass/Fail rates. The passed indicator comes from Banner and 'passing' means a grade at or above C-. Failing includes withdrawal by the student but for this analysis does not include, no-grades, incomplete and audits.
+
+\newpage
+
+## All subjects
+
+For all student enrollments it appears students who register later outperform 'On Time' registrations but this question is more complicated than figure 1 would imply. Students who register late might be taking easier classes than those students who enroll on time. The black line represents the pass rate for all enrollments in this data set for 'On Time' enrollments (66.16%). One thing to be aware of with this and all of the following plots is enrollments passed day 10 (11, 12, 13) have few students and become less reliable compared to 'On Time' through day 10. 
+
+```{r, include=T}
+data %>% filter(FINAL_GRADE != "NG" & FINAL_GRADE != "AU" & FINAL_GRADE != "I") %>% 
+  group_by(days_late, PASSED_IND) %>%
+  summarise(n = n_distinct(BANNER_ID)) %>%
+  mutate(tot = round(n/sum(n), 4)*100) %>%
+  ggplot() + 
+    geom_bar(aes(x = days_late, y = tot , fill = as.factor(PASSED_IND)), position = "fill", stat = "identity") + 
+    labs(y = "Percent Pass / Fail", x = "Days Late", title = "Figure 1: Pass/Fail percentages for Late Registration vs. On Time") + 
+    scale_fill_manual(name = "", values = c("#ffcd00", "#00abe1"), labels = c("Failed", "Passed")) + 
+    geom_hline(yintercept = .6616)
+```
+
+\newpage
+
+## Math Courses
+
+For Math courses the decline in academic performance is present but surprisingly small in comparison to some other subject as will be seen later. The black line indicates the pass rate for Math courses by students who enrolled 'On Time' (68.24%). 
+
+```{r, include=T}
+# COURSE SUBJECT MATH
+data %>% filter(FINAL_GRADE != "NG" & FINAL_GRADE != "AU" & FINAL_GRADE != "I") %>% 
+  filter(COURSE_SUBJECT == "MATH") %>%
+  group_by(days_late, PASSED_IND) %>%
+  summarise(n = n_distinct(BANNER_ID)) %>%
+  mutate(tot = round(n/sum(n), 4)*100) %>%
+  ggplot() + 
+    geom_bar(aes(x = days_late, y = tot , fill = as.factor(PASSED_IND)), position = "fill", stat = "identity") + 
+    labs(y = "Percent Pass / Fail", x = "Days Late", title = "Figure 2: Pass/Fail percentages for Math courses") + 
+    scale_fill_manual(name = "", values = c("#ffcd00", "#00abe1"), labels = c("Failed", "Passed")) + 
+    geom_hline(yintercept = .6824)
+```
+
+\newpage
+
+## English Courses
+
+The academic decline for late-registering students in English courses is much more noticeable than in Math. Pass rates start at 75.59% and fall to 49.72% for students who register 10 days late. Again be skeptical of the rising pass rates for registrations 11, 12, 13 as there are single digit or very low values of enrollments for these days. 
+
+```{r, include=T}
+# COURSE SUBJECT ENGL
+data %>% filter(FINAL_GRADE != "NG" & FINAL_GRADE != "AU" & FINAL_GRADE != "I") %>% 
+  filter(COURSE_SUBJECT == "ENGL") %>%
+  group_by(days_late, PASSED_IND) %>%
+  summarise(n = n_distinct(BANNER_ID)) %>%
+  mutate(tot = round(n/sum(n), 4)*100) %>%
+  ggplot() + 
+    geom_bar(aes(x = days_late, y = tot , fill = as.factor(PASSED_IND)), position = "fill", stat = "identity") + 
+    labs(y = "Percent Pass / Fail", x = "Days Late", title = "Figure 3: Pass/Fail percentages for English courses") + 
+    scale_fill_manual(name = "", values = c("#ffcd00", "#00abe1"), labels = c("Failed", "Passed")) + 
+    geom_hline(yintercept = .7559)
+```
+
+\newpage
+
+## Biology Courses
+
+```{r, include=T}
+# COURSE SUBJECT BIOL 1610
+data %>% filter(FINAL_GRADE != "NG" & FINAL_GRADE != "AU" & FINAL_GRADE != "I") %>% 
+  filter(COURSE_SUBJECT == "BIOL") %>%
+  group_by(days_late, PASSED_IND) %>%
+  summarise(n = n_distinct(BANNER_ID)) %>%
+  mutate(tot = round(n/sum(n), 4)*100) %>%
+  ggplot() + 
+    geom_bar(aes(x = days_late, y = tot , fill = as.factor(PASSED_IND)), position = "fill", stat = "identity") + 
+    labs(y = "Percent Pass / Fail", x = "Days Late", title = "Figure 4: Pass/Fail percentages for Biology courses") + 
+    scale_fill_manual(name = "", values = c("#ffcd00", "#00abe1"), labels = c("Failed", "Passed")) + 
+    geom_hline(yintercept = .7579)
+```
+
+\newpage
+
+## CSIS courses
+
+Pass rates for CSIS classes seems to resist declining until beyond 7 days. There are only 19 total enrollments for days 11, 12, 13 so these numbers are likely skewed by just a couple of students (day 11 only has 4 enrollments, 3 passing, 1 failing). 
+
+```{r, include=T}
+# COURSE SUBJECT CSIS
+data %>% filter(FINAL_GRADE != "NG" & FINAL_GRADE != "AU" & FINAL_GRADE != "I") %>% 
+  filter(COURSE_SUBJECT == "CSIS") %>%
+  group_by(days_late, PASSED_IND) %>%
+  summarise(n = n_distinct(BANNER_ID)) %>%
+  mutate(tot = round(n/sum(n), 4)*100) %>%
+  ggplot() + 
+    geom_bar(aes(x = days_late, y = tot , fill = as.factor(PASSED_IND)), position = "fill", stat = "identity") + 
+    labs(y = "Percent Pass / Fail", x = "Days Late", title = "Figure 5: Pass/Fail percentages for CSIS courses") + 
+    scale_fill_manual(name = "", values = c("#ffcd00", "#00abe1"), labels = c("Failed", "Passed")) + 
+    geom_hline(yintercept = .7071)
+```
+
+\newpage
+
+## HLAC courses
+
+The HLAC subject was included as it is the third most late registered subject in this data set. HLAC course have a pass rate of 85.67% for students who register 'On Time' while this declines with days since the start of the term it remains quite high compared to other programs. Overall course pass rates for late registration might be higher than 'On Time' registration, as was seen in Figure 1, because there is a higher proportion of late registrations for 'easier' courses. 
+
+```{r, include=T}
+# COURSE SUBJECT HLAC
+data %>% filter(FINAL_GRADE != "NG" & FINAL_GRADE != "AU" & FINAL_GRADE != "I") %>% 
+  filter(COURSE_SUBJECT == "HLAC") %>%
+  group_by(days_late, PASSED_IND) %>%
+  summarise(n = n_distinct(BANNER_ID)) %>%
+  mutate(tot = round(n/sum(n), 4)*100) %>%
+  ggplot() + 
+    geom_bar(aes(x = days_late, y = tot , fill = as.factor(PASSED_IND)), position = "fill", stat = "identity") + 
+    labs(y = "Percent Pass / Fail", x = "Days Late", title = "Figure 6: Pass/Fail percentages for HLAC courses") + 
+    scale_fill_manual(name = "", values = c("#ffcd00", "#00abe1"), labels = c("Failed", "Passed")) + 
+    geom_hline(yintercept = .8567)
+```
+
+\newpage
+
+## Estimated Impact of Late Registration on Likelihood of Passing
+
+Figure 7 and Table 1 below display the estimated effect of registering either 'On Time' or late along with the 95% confidence interval. This is not a causal model but shows correlations associated with registration date. The x-axis represents the estimated relative likelihood of passing the course. The black dot represents the mean estimated value by registration day and the lines extending from the dot represent the 95% confidence interval associated with that estimate. 
+
+A value of zero mean there is no relative impact on a students ability to pass the course. Registering 'On Time' is associated with a +15.5% increased relative likelihood of passing the course. This does not necessarily mean that registering 'On Time' caused these students to perform better (maybe registering 'On Time' is the result of being a better planner and student). But the values in both Figure 7 and Table 1 are controlling for subject difficulty and registration status.
+
+In Figure 7 you can see that after day 7 there is high confidence that registering this late in the term has a statistically significant association with worse academic performance (-4.17 percent likelihood of failing the course with the entire 95% confidence interval being negative for day 8). Days 11, 12 and 13 have large uncertainty and are not conclusive (this is likely due to small sample sizes being sensitive to outliers).
+
+```{r, include=T}
+rr1 <- ranef(pass_model_2, condVar = T)
+
+rr2 <- data.frame(late = rownames(rr1[[2]]),
+                  int=unname(rr1[[2]]),
+                  se=sqrt(c(attr(rr1[[2]], "postVar"))))
+#rr3 <- merge(rr2,dd)
+rr4 <- transform(rr2, late = reorder(late, int))
+rr4$late <- factor(rr4$late, levels = c("13", "12", "11", "10", "9", "8", "7", "6", "5", "4", "3", "2", "1", "On Time"))
+rr4$int <- round((-.5 + (exp(rr4$int)/(1 + exp(rr4$int)))), 4)*100 # converting to probabilty compared to a coin-flip
+rr4$se <- round((-.5 + (exp(rr4$se)/(1 + exp(rr4$se)))), 4)*100 # converting to probability compared to a coin-flip
+days_plot_2 <- rr4 %>% 
+  ggplot(aes(late,int, ymin=int-1.96*se, ymax=int+1.96*se)) + 
+  geom_pointrange() + 
+  labs(x = "Days Late", y ="Relative Percentage Change in Likelihood of Passing.", title = "Figure 7: Estimated effect of Late Registration") +
+  coord_flip()
+
+days_plot_2
+```
+
+\newpage
+
+```{r, include=TRUE}
+rr4$low <- rr4$int-1.96*rr4$se
+rr4$high <- rr4$int+1.96*rr4$se
+rr4 %>% select(late,int, low, high) %>% 
+  arrange(desc(late)) %>%
+  knitr::kable(col.names = c("","Estimate %", ".025", ".975"), caption = "Estimated relative likelihood of passing with 95% confidence interval.")
+```
+
+
+```{r}
+rr1 <- ranef(pass_model_2, condVar = T)
+
+rr2 <- data.frame(program = rownames(rr1[[1]]),
+                  int=unname(rr1[[1]]),
+                  se=sqrt(c(attr(rr1[[1]], "postVar"))))
+#rr3 <- merge(rr2,dd)
+rr4 <- transform(rr2, program = reorder(program, int))
+program_plot_2 <- rr4 %>% 
+  ggplot(aes(program, int, ymin=int-1.96*se, ymax=int+1.96*se)) + 
+  geom_pointrange() + 
+  labs(x = "Program") +
+  coord_flip()
+
+program_plot_2
+```
+
+## Most popular courses 'On Time' vs. Late
+
+When looking at tables 2 and 3 below it can be seen that both English and Math courses make up a relatively small share of the courses enrolled. This is more validating evidence of the hypothesis that late registering students take 'easier' courses. This hypothesis explains why raw numbers for the entire college can show improvement in pass rates for late-registering students while statistical models and pass rates broken down by subject paint a different academic picture; declining pass rates. 
+
+```{r, include=TRUE}
+late_table <- data %>% 
+  filter(days_late != "On Time") %>%
+  filter(FINAL_GRADE != "NG" & FINAL_GRADE != "AU" & FINAL_GRADE != "I") %>% 
+  group_by(COURSE_SUBJECT) %>%
+  tally() %>%
+  mutate(Proportion = round(n/sum(n), 4)*100) %>%
+  arrange(desc(n))
+
+knitr::kable(late_table[1:10,], caption = "Most popular subjects for late registration enrollments.", col.names = c("", "#", "Proportion"))
+```
+
+\newpage
+
+```{r, include=TRUE}
+on_time_table <- data %>% 
+  filter(days_late == "On Time") %>%
+  filter(FINAL_GRADE != "NG" & FINAL_GRADE != "AU" & FINAL_GRADE != "I") %>% 
+  group_by(COURSE_SUBJECT) %>%
+  tally() %>%
+  mutate(prop = round(n/sum(n), 4)*100) %>%
+  arrange(desc(n))
+
+knitr::kable(on_time_table[1:10,], caption = "Most popular subjects for 'On Time' registration enrollments.",  col.names = c("", "#", "Proportion"))
+```
+
+
+
